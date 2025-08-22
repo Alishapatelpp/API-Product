@@ -1,0 +1,121 @@
+import express from "express";
+import axios from "axios";
+
+const app = express();
+app.use(express.json());
+
+function getCompanyAge(foundedYear) {
+  if (!foundedYear) return null;
+  const thisYear = new Date().getFullYear();
+  return thisYear - foundedYear;
+}
+
+
+function tidyUpProduct(p) {
+  if (!p) return {}; 
+  
+  const brandBits = p.brand
+    ? {
+        name: p.brand.name || null,
+        founded: p.brand.year_founded || null,
+        company_age: p.brand.year_founded
+           getCompanyAge(p.brand.year_founded)
+          : null,
+        address: p.brand.address
+           `${p.brand.address.street}, ${p.brand.address.city}, ${p.brand.address.state}, ${p.brand.address.postal_code}, ${p.brand.address.country}`
+          : null,
+      }
+    : null;
+        
+  return {
+    product_id: p.product_id null,
+    product_name: p.product_name null,
+    brand: brandBits,
+    category_name: p.category_name null,
+    description_text: p.description_text null,
+    price: p.price null,
+    currency: p.currency null,
+    processor: p.processor null,
+    memory: p.memory null,
+    release_date: p.release_date  null,
+    average_rating: p.average_rating null,
+    rating_count: p.rating_count null,
+  };
+}
+
+
+async function fetchElectronics() {
+  const url = "http://interview.surya-digital.in/get-electronics";
+  const resp = await axios.get(url);
+  return resp.data;
+}
+
+app.get("/step1", async (req, res) => {
+  try {
+    const rawData = await fetchElectronics();
+
+    if (!Array.isArray(rawData)) {
+      return res.status(502).json({ error: "Upstream API gave bad data" });
+    }
+ 
+
+    const usableStuff = rawData
+      .filter(
+        (p) =>
+          p.product_id && p.product_name && p.brand && p.category_name
+             )
+      .map(tidyUpProduct);
+
+    res.json(usableStuff);
+  } catch (e) {
+    console.error("step1 error:", e.message);
+    res.status(500).json({ error: "Something went wrong grabbing electronics" });
+  }
+});
+
+app.get("/step2", async (req, res) => {
+  try {
+    const { release_date_start: start, release_date_end: end } = req.query;
+
+    const rawData = await fetchElectronics();
+    if (!Array.isArray(rawData)) {
+      return res.status(502).json({ error: "Upstream gave invalid response" });
+    }
+
+   
+    const looksLikeDate = (str) => /^\d{4}-\d{2}-\d{2}$/.test(str);
+
+    if (start && !looksLikeDate(start)) {
+      return res
+        .status(400)
+        .json({ error: "release_date_start must be in YYYY-MM-DD format" });
+    }
+    if (end && !looksLikeDate(end)) {
+      return res
+        .status(400)
+        .json({ error: "release_date_end must be in YYYY-MM-DD format" });
+    }
+
+    let filtered = rawData;
+
+    const startDate = start ? new Date(start) : null;
+    const endDate = end ? new Date(end) : null;
+
+    if (startDate || endDate) {
+      filtered = filtered.filter((item) => {
+        if (!item.release_date) return false; 
+        const d = new Date(item.release_date);
+        if (startDate && d < startDate) return false;
+        if (endDate && d > endDate) return false;
+        return true;
+      });
+    }
+    const finalProducts = filtered.map(tidyUpProduct);
+
+    res.json(finalProducts);
+  } catch (err) {
+    console.error("step2 error happened:", err.message);
+    res.status(500).json({ error: "Could not filter product list" });
+  }
+});
+export default app;
